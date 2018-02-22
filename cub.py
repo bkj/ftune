@@ -51,8 +51,8 @@ dataloaders = {
 }
 
 # >>
-datasets = make_datasets(root='_data/cub_splits', img_size=224)
-dataloaders = make_dataloaders(datasets)
+# datasets = make_datasets(root='_data/cub_splits', img_size=224)
+# dataloaders = make_dataloaders(datasets)
 # <<
 
 # --
