@@ -32,7 +32,7 @@ def make_datasets(root, img_size=224):
     transforms_train = transforms.Compose([
         transforms.RandomRotation(degrees=10),
         transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), # Are these reasonable?
-        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomHorizontalFlip(),
         transforms.Resize(img_size),
         transforms.CenterCrop(img_size),
         transforms.ToTensor(),
@@ -40,13 +40,13 @@ def make_datasets(root, img_size=224):
     ])
     
     return {
-        "train"       : ImageFolder(root=os.path.join(root, 'train'), transforms=transforms_train),
-        "train_fixed" : ImageFolder(root=os.path.join(root, 'train'), transforms=transforms_valid),
-        "valid"       : ImageFolder(root=os.path.join(root, 'valid'), transforms=transforms_valid),
+        "train"       : ImageFolder(root=os.path.join(root, 'train'), transform=transforms_train),
+        "train_fixed" : ImageFolder(root=os.path.join(root, 'train'), transform=transforms_valid),
+        "val"         : ImageFolder(root=os.path.join(root, 'valid'), transform=transforms_valid),
     }
 
 
-def make_dataloaders(datasets, train_batch_size, eval_batch_size, num_workers, seed, pin_memory):
+def make_dataloaders(datasets, train_batch_size=64, eval_batch_size=128, num_workers=8, seed=123, pin_memory=False):
     dataloaders = {}
     for dataset_name, dataset in datasets.items():
         if 'train' in dataset_name:

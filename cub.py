@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 
 import os
 import sys
+import argparse
 import numpy as np
 from tqdm import tqdm
 
@@ -31,7 +32,16 @@ from data import make_datasets, make_dataloaders
 from layers import AdaptiveMultiPool2d, Flatten
 
 torch.backends.cudnn.deterministic = True
-basenet.helpers.set_seeds(123)
+
+# --
+# CLI
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=1)
+    return parser.parse_args()
+
+args = parse_args()
 
 # --
 # IO
@@ -40,6 +50,8 @@ basenet.helpers.set_seeds(123)
 sys.path.append('/home/bjohnson/software/fastai')
 from fastai.dataset import ImageClassifierData
 from fastai.transforms import tfms_from_model, transforms_side_on
+
+basenet.helpers.set_seeds(args.seed)
 
 tfms  = tfms_from_model(resnet34, 224, aug_tfms=transforms_side_on, max_zoom=1.1)
 data  = ImageClassifierData.from_paths('_data/cub_splits', tfms=tfms)
@@ -58,15 +70,16 @@ dataloaders = {
 # --
 # Define model
 
-pop_last_k  = 2
-top_hidden  = 512
-num_classes = 200
+pop_last_k  = 2   # Drop last 2 layers of resnet
+top_hidden  = 512 # Number of channels in resnet output
+num_classes = 200 # Number of classes in CUB dataset
 
 orig_model   = resnet34(pretrained=True)
 orig_layers  = helpers.get_children(orig_model)
 orig_layers  = orig_layers[:-pop_last_k]
 num_features = helpers.get_num_features(orig_layers) * 2
 
+# Define architecture of classifier
 top_layers = [
     AdaptiveMultiPool2d(output_size=(1, 1)),
     Flatten(),
@@ -78,18 +91,21 @@ top_layers = [
     
     nn.BatchNorm1d(num_features=top_hidden),
     nn.Dropout(p=0.5),
-    nn.Linear(in_features=top_hidden, out_features=num_classes)
+    nn.Linear(in_features=top_hidden, out_features=num_classes),
+    
+    nn.LogSoftmax(), # !! **
 ]
 
+# Stack classifier on top of resnet feature extractor
 model = TopModel(
     conv=nn.Sequential(*orig_layers),
     classifier=nn.Sequential(*top_layers),
-    loss_fn=F.cross_entropy,
+    loss_fn=F.nll_loss, # !! **
 ).cuda().eval()
 
-helpers.apply_init(model.classifier, torch.nn.init.kaiming_normal)
 
-model.verbose = False
+# Use non-default init for classifier weights
+helpers.apply_init(model.classifier, torch.nn.init.kaiming_normal)
 
 # --
 # Precompute convolutional features
@@ -102,8 +118,11 @@ model.precompute_conv(dataloaders, mode='val', cache='./.precompute_conv')
 
 model.use_conv = False
 cacheloaders = model.get_precomputed_loaders()
-lr_hist, loss_hist = LRFind.find(model, cacheloaders, mode='train_fixed', smooth_loss=True)
-opt_lr = LRFind.get_optimal_lr(lr_hist, loss_hist)
+
+# lr_hist, loss_hist = LRFind.find(model, cacheloaders, mode='train_fixed', smooth_loss=True)
+# opt_lr = LRFind.get_optimal_lr(lr_hist, loss_hist)
+
+opt_lr = 0.2
 
 # --
 # Train w/ precomputed features + constant learning rate
@@ -119,7 +138,6 @@ model.init_optimizer(
     momentum=0.9
 )
 
-cacheloaders = model.get_precomputed_loaders()
 for epoch in range(num_epochs_classifier_precomputed):
     train = model.train_epoch(cacheloaders, mode='train_fixed')
     valid = model.eval_epoch(cacheloaders, mode='val')
@@ -130,6 +148,7 @@ for epoch in range(num_epochs_classifier_precomputed):
         "valid_loss"        : np.mean(valid['loss']),
         "valid_acc"         : valid['acc']
     })
+    sys.stdout.flush()
 
 # --
 # Training w/ data augmentation + SGDR
@@ -154,13 +173,13 @@ for epoch in range(num_epochs_classifier_augmented):
         "valid_loss"        : np.mean(valid['loss']),
         "valid_acc"         : valid['acc']
     })
+    sys.stdout.flush()
 
 
 # --
 # Estimate optimal LR for end-to-end fine tuning
 
 basenet.helpers.set_freeze(model.conv, False)
-lr_mults = np.array([0.01, 0.1, 1.0])
 
 conv_children = list(model.conv.children())
 params = [
@@ -168,6 +187,8 @@ params = [
     {"params" : helpers.parameters_from_children(conv_children[6:])},
     {"params" : model.classifier.parameters()},
 ]
+
+lr_mults = np.array([0.01, 0.1, 1.0])
 
 # >>
 # !! This is recommended by fastai -- but it produces a wacky plot AFAICT
@@ -177,21 +198,17 @@ params = [
 
 # opt_lr = LRFind.get_optimal_lr(lr_hist, loss_hist)
 
-# _ = plt.plot(lr_hist[:,-1], loss_hist)
-# _ = plt.xscale('log')
-# show_plot()
 # >>
-opt_lr = opt_lr * 0.1 * lr_mults
+opt_lr = opt_lr * 0.1 
 # <<
 
 # --
 # Finetuning the whole network
 
-lr_scheduler = LRSchedule.burnin_sgdr(lr_init=opt_lr, period_length=1, t_mult=2)
 model.init_optimizer(
     opt=torch.optim.SGD,
     params=params,
-    lr_scheduler=lr_scheduler,
+    lr_scheduler=LRSchedule.burnin_sgdr(lr_init=opt_lr * lr_mults, period_length=1, t_mult=2),
     momentum=0.9
 )
 
@@ -205,4 +222,11 @@ for epoch in range(num_epochs_end2end):
         "valid_loss"        : np.mean(valid['loss']),
         "valid_acc"         : valid['acc']
     })
+    sys.stdout.flush()
 
+
+# 224x224 images
+# ~ 0.75
+
+# 448x448 images
+# {'stage': 'end2end', 'epoch': 14, 'train_debias_loss': 0.14390290099964395, 'valid_loss': 0.7823975482484796, 'valid_acc': 0.7982395581636176}

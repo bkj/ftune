@@ -18,8 +18,14 @@ class AdaptiveMultiPool2d(nn.Module):
     
     def forward(self, x):
         return torch.cat([op_fn(x, output_size=self.output_size) for op_fn in self.op_fns], dim=1)
+    
+    def __repr__(self):
+        return 'AdaptiveMultiPool2d()'
 
 
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.shape[0], -1)
+    
+    def __repr__(self):
+        return 'Flatten()'

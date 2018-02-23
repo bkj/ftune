@@ -86,7 +86,7 @@ class TopModel(basenet.BaseNet):
                 batch_size=batch_size,
                 num_workers=8,
                 pin_memory=True,
-                shuffle='train' in mode
+                shuffle=True
             )
         
         return out
