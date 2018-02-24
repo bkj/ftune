@@ -4,16 +4,38 @@
     data.py
 """
 
+import os
+import h5py
+
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-import os
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
-# !! Untested
+class H5Dataset(torch.utils.data.Dataset):
+    def __init__(self, h5_path):
+        self.h5_path = h5_path
+        self.length = len(h5py.File(h5_path, 'r'))
+    
+    def __getitem__(self, index):
+        h5_file = h5py.File(self.h5_path, 'r')
+        
+        record = h5_file[str(index)]
+        res = (
+            torch.from_numpy(record['data'].value),
+            record['target'].value,
+        )
+        
+        h5_file.close()
+        return res
+        
+    def __len__(self):
+        return self.length
+
+
 dataset_stats = {
     "imagenet" : (
         [0.485, 0.456, 0.406],
@@ -21,23 +43,25 @@ dataset_stats = {
     )
 }
 
-def make_datasets(root, img_size=224):
-    transforms_valid = transforms.Compose([
-        transforms.Resize(img_size),
-        transforms.CenterCrop(img_size),
-        transforms.ToTensor(),
-        transforms.Normalize(*dataset_stats['imagenet'])
-    ])
-    
-    transforms_train = transforms.Compose([
-        transforms.RandomRotation(degrees=10),
-        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), # Are these reasonable?
-        transforms.RandomHorizontalFlip(),
-        transforms.Resize(img_size),
-        transforms.CenterCrop(img_size),
-        transforms.ToTensor(),
-        transforms.Normalize(*dataset_stats['imagenet'])
-    ])
+def make_datasets(root, img_size=224, transforms=None):
+    if transforms is None:
+        transforms_train = transforms.Compose([
+            transforms.RandomRotation(degrees=10),
+            transforms.Resize(img_size),
+            transforms.CenterCrop(img_size),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1), # Are these reasonable?
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(*dataset_stats['imagenet'])
+        ])
+        transforms_valid = transforms.Compose([
+            transforms.Resize(img_size),
+            transforms.CenterCrop(img_size),
+            transforms.ToTensor(),
+            transforms.Normalize(*dataset_stats['imagenet'])
+        ])
+    else:
+        transforms_train, transforms_valid = transforms
     
     return {
         "train"       : ImageFolder(root=os.path.join(root, 'train'), transform=transforms_train),

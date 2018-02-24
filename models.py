@@ -8,7 +8,9 @@ from __future__ import print_function, division
 
 import os
 import sys
+import h5py
 import numpy as np
+from glob import glob
 from tqdm import tqdm
 
 import torch
@@ -17,6 +19,9 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 
 import basenet
+from basenet import helpers
+
+from data import H5Dataset
 
 class TopModel(basenet.BaseNet):
     def __init__(self, conv, classifier, **kwargs):
@@ -38,55 +43,42 @@ class TopModel(basenet.BaseNet):
         
         return x
     
-    def precompute_conv(self, dataloaders, mode, cache=None):
-        if (cache is not None) and os.path.exists(os.path.join(cache, mode)):
-                print('precompute_conv: loading %s' % os.path.join(cache, mode), file=sys.stderr)
-                self._precomputed[mode] = {
-                    "data"    : torch.load(os.path.join(cache, mode, 'data')),
-                    "targets" : torch.load(os.path.join(cache, mode, 'targets')),
-                }
-        else:
-            _ = self.eval()
-            tmp = {"data" : [], "targets" : []}
+    def precompute_conv(self, dataloaders, mode, cache, force=False):
+        if not os.path.exists(cache):
+            os.makedirs(cache)
             
-            gen = dataloaders[mode]
-            if self.verbose:
-                gen = tqdm(gen, total=len(gen))
+        cache_path = os.path.join(cache, mode + '.h5')
+        if os.path.exists(cache_path) and (not force):
+            print('precompute_conv: using cache %s' % cache_path, file=sys.stderr)
+        else:
+            
+            _ = self.eval()
             
             self.use_conv = True
             self.use_classifier = False
             
-            for data, target in gen:
-                data = Variable(data, volatile=True).cuda()
-                output = self(data)
-                tmp['data'].append(basenet.helpers.to_numpy(output))
-                tmp['targets'].append(basenet.helpers.to_numpy(target))
-            
-            tmp['data']    = torch.Tensor(np.vstack(tmp['data']))
-            tmp['targets'] = torch.LongTensor(np.hstack(tmp['targets']))
-            
-            self._precomputed[mode] = tmp
+            cache_file = h5py.File(cache_path, 'w', libver='latest')
+            data, targets = self.predict(dataloaders, mode=mode)
+            data, targets = helpers.to_numpy(data), helpers.to_numpy(targets)
+            for i,(d,t) in enumerate(zip(data, targets)):
+                cache_file['%d/data' % i] = d
+                cache_file['%d/target' % i] = t
             
             self.use_conv = True
             self.use_classifier = True
             
-            if cache is not None:
-                print('precompute_conv: saving %s' % os.path.join(cache, mode), file=sys.stderr)
-                if not os.path.exists(os.path.join(cache, mode)):
-                    os.makedirs(os.path.join(cache, mode))
-                
-                torch.save(tmp['data'], os.path.join(cache, mode, 'data'))
-                torch.save(tmp['targets'], os.path.join(cache, mode, 'targets'))
+            cache_file.flush()
+            cache_file.close()
     
-    def get_precomputed_loaders(self, batch_size=64):
-        out = {}
-        for mode, tmp in self._precomputed.items():
-            out[mode] = torch.utils.data.DataLoader(
-                torch.utils.data.TensorDataset(tmp['data'], tmp['targets']),
+    def get_precomputed_loaders(self, cache, batch_size=64, num_workers=8, **kwargs):
+        loaders = {}
+        for cache_path in glob(os.path.join(cache, '*.h5')):
+            print(cache_path)
+            loaders[os.path.basename(cache_path).split('.')[0]] = torch.utils.data.DataLoader(
+                H5Dataset(cache_path),
                 batch_size=batch_size,
-                num_workers=8,
-                pin_memory=True,
-                shuffle=True
+                num_workers=num_workers,
+                **kwargs
             )
         
-        return out
+        return loaders
