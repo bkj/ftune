@@ -103,24 +103,31 @@ model = TopModel(
     loss_fn=F.nll_loss, # !! **
 ).cuda().eval()
 
-
 # Use non-default init for classifier weights
 helpers.apply_init(model.classifier, torch.nn.init.kaiming_normal)
 
 # --
 # Precompute convolutional features
 
-model.precompute_conv(dataloaders, mode='train_fixed', cache='./.precompute_conv')
-model.precompute_conv(dataloaders, mode='val', cache='./.precompute_conv')
+model.verbose = True
+model.use_classifier = False
+model.precompute_features(dataloaders, mode='train_fixed', cache='_results/precomputed/conv')
+model.precompute_features(dataloaders, mode='val', cache='_results/precomputed/conv')
+model.use_classifier = True
 
 # --
 # Estimate optimal LR for finetuning
 
 model.use_conv = False
-cacheloaders = model.get_precomputed_loaders()
+cacheloaders = model.get_precomputed_loaders(cache='_results/precomputed/conv')
 
-# lr_hist, loss_hist = LRFind.find(model, cacheloaders, mode='train_fixed', smooth_loss=True)
-# opt_lr = LRFind.get_optimal_lr(lr_hist, loss_hist)
+_ = model.train()
+lr_hist, loss_hist = LRFind.find(model, cacheloaders, mode='train_fixed', smooth_loss=True)
+opt_lr = LRFind.get_optimal_lr(lr_hist, loss_hist)
+
+_ = plt.plot(lr_hist.squeeze(), loss_hist)
+_ = plt.xscale('log')
+show_plot()
 
 opt_lr = 0.2
 

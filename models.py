@@ -32,6 +32,8 @@ class PrecomputeMixin(object):
         if os.path.exists(cache_path) and (not force):
             print('precompute_conv: using cache %s' % cache_path, file=sys.stderr)
         else:
+            if os.path.exists(cache_path) and force:
+                os.remove(cache_path)
             
             _ = self.eval()
             
