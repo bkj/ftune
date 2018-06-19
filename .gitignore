@@ -1,3 +1,4 @@
+fastai-cub/*
 *pyc
 __pycache__
 .precompute*
