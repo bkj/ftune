@@ -47,18 +47,21 @@ class PrecomputeMixin(object):
             cache_file.flush()
             cache_file.close()
     
-    def get_precomputed_loaders(self, cache, batch_size=64, num_workers=8, **kwargs):
+    def get_precomputed_loaders(self, cache, batch_size=64, shuffle=True, num_workers=8, **kwargs):
+        kwargs.update({
+            "batch_size"  : batch_size,
+            "shuffle"     : shuffle,
+            "num_workers" : num_workers,
+        })
+        
         loaders = {}
         for cache_path in glob(os.path.join(cache, '*.h5')):
             print("get_precomputed_loaders: loading cache %s" % cache_path, file=sys.stderr)
-            loaders[os.path.basename(cache_path).split('.')[0]] = torch.utils.data.DataLoader(
-                H5Dataset(cache_path),
-                batch_size=batch_size,
-                num_workers=num_workers,
-                **kwargs
-            )
+            cache_name = os.path.basename(cache_path).split('.')[0]
+            loaders[cache_name] = torch.utils.data.DataLoader(H5Dataset(cache_path), **kwargs)
         
         return loaders
+
 
 class StackModel(basenet.BaseNet, PrecomputeMixin):
     def __init__(self, groups, **kwargs):
@@ -73,6 +76,7 @@ class StackModel(basenet.BaseNet, PrecomputeMixin):
                 x = group(x)
         
         return x
+
 
 class TopModel(basenet.BaseNet, PrecomputeMixin):
     def __init__(self, conv, classifier, **kwargs):
