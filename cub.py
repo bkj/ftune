@@ -25,7 +25,7 @@ from torchvision.models.resnet import resnet34
 
 import basenet
 from basenet import helpers
-from basenet.lr import LRSchedule, LRFind
+from basenet.hp_schedule import HPSchedule, HPFind
 
 from models import TopModel
 from data import make_datasets, make_dataloaders
@@ -62,43 +62,43 @@ dataloaders = {
     "val"         : data.val_dl
 }
 
-# <<
+# # <<
 
-# Dump train
-all_data, all_target = [], []
-for i, (data, target) in enumerate(dataloaders['train_fixed']):
-    print(i)
-    data = helpers.to_numpy(data)
-    target = helpers.to_numpy(target)
-    all_data.append(data)
-    all_target.append(target)
+# # Dump train
+# all_data, all_target = [], []
+# for i, (data, target) in enumerate(dataloaders['train_fixed']):
+#     print(i)
+#     data = helpers.to_numpy(data)
+#     target = helpers.to_numpy(target)
+#     all_data.append(data)
+#     all_target.append(target)
 
-all_data = np.concatenate(all_data)
-all_target = np.hstack(all_target)
+# all_data = np.concatenate(all_data)
+# all_target = np.hstack(all_target)
 
-sel = np.random.permutation(all_data.shape[0])
-all_data, all_target = all_data[sel], all_target[sel]
-np.save('_data/cub_train_X', all_data)
-np.save('_data/cub_train_y', all_target)
+# sel = np.random.permutation(all_data.shape[0])
+# all_data, all_target = all_data[sel], all_target[sel]
+# np.save('_data/cub_train_X', all_data)
+# np.save('_data/cub_train_y', all_target)
 
-# Dump val
-all_data, all_target = [], []
-for i, (data, target) in enumerate(dataloaders['val']):
-    print(i)
-    data = helpers.to_numpy(data)
-    target = helpers.to_numpy(target)
-    all_data.append(data)
-    all_target.append(target)
+# # Dump val
+# all_data, all_target = [], []
+# for i, (data, target) in enumerate(dataloaders['val']):
+#     print(i)
+#     data = helpers.to_numpy(data)
+#     target = helpers.to_numpy(target)
+#     all_data.append(data)
+#     all_target.append(target)
 
-all_data = np.concatenate(all_data)
-all_target = np.hstack(all_target)
+# all_data = np.concatenate(all_data)
+# all_target = np.hstack(all_target)
 
-sel = np.random.permutation(all_data.shape[0])
-all_data, all_target = all_data[sel], all_target[sel]
-np.save('_data/cub_val_X', all_data)
-np.save('_data/cub_val_y', all_target)
+# sel = np.random.permutation(all_data.shape[0])
+# all_data, all_target = all_data[sel], all_target[sel]
+# np.save('_data/cub_val_X', all_data)
+# np.save('_data/cub_val_y', all_target)
 
-# >>
+# # >>
 
 # >>
 # datasets = make_datasets(root='_data/cub_splits', img_size=224)
@@ -164,13 +164,12 @@ top_layers = [
     
     # nn.LogSoftmax(), # !! **
             
-            # PreActBlock(num_features // 2, num_features // 2),
-            AdaptiveMultiPool2d(output_size=(1, 1)),
-            Flatten(),
-            nn.BatchNorm1d(num_features),
-            nn.Linear(in_features=num_features, out_features=num_classes),
-            nn.LogSoftmax(),
-
+    # PreActBlock(num_features // 2, num_features // 2),
+    AdaptiveMultiPool2d(output_size=(1, 1)),
+    Flatten(),
+    nn.BatchNorm1d(num_features),
+    nn.Linear(in_features=num_features, out_features=num_classes),
+    nn.LogSoftmax(),
 ]
 
 # Stack classifier on top of resnet feature extractor
@@ -178,7 +177,7 @@ model = TopModel(
     conv=nn.Sequential(*orig_layers),
     classifier=nn.Sequential(*top_layers),
     loss_fn=F.nll_loss, # !! **
-).cuda().eval()
+).to('cuda').eval()
 
 # Use non-default init for classifier weights
 for child in model.classifier.children():
@@ -192,8 +191,8 @@ for child in model.classifier.children():
 
 model.verbose = True
 model.use_classifier = False
-model.precompute_features(dataloaders, mode='train_fixed', cache='_results/precomputed/conv')
-model.precompute_features(dataloaders, mode='val', cache='_results/precomputed/conv')
+model.precompute_features(dataloaders, mode='train_fixed', cache='_results/precomputed/cub/conv')
+model.precompute_features(dataloaders, mode='val', cache='_results/precomputed/cub/conv')
 model.use_classifier = True
 
 # --
